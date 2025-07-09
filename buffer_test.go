@@ -923,7 +923,7 @@ func newBufWithSize(buf []byte, size int) *Buffer {
 
 func FuzzReaderAt(f *testing.F) {
 	// target, can be only one per test
-	// values of a and b will be auto-generated
+	// values of data and randOffset will be auto-generated
 	f.Fuzz(func(t *testing.T, data []byte, randOffset int64) {
 		if randOffset <= 0 || len(data) == 0 {
 			return

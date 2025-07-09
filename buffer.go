@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/minio/sio"
@@ -307,49 +308,88 @@ func (b *Buffer) Read(data []byte) (n int, err error) {
 }
 
 func (b *Buffer) ReadAt(data []byte, off int64) (n int, err error) {
-	// offset is only on disk:
-	if off >= int64(b.buff.Len()) && b.useFile {
+	// Input validation
+	if off < 0 {
+		return 0, fmt.Errorf("negative offset: %d", off)
+	}
+	if len(data) == 0 {
+		return 0, nil
+	}
+	if off >= int64(b.size) {
+		return 0, io.EOF
+	}
+
+	// Ensure writing is finished before reading
+	if !b.writingFinished {
+		if b.writeFile != nil {
+			b.writeFile.Close()
+			b.writeFile = nil
+		}
+		b.writingFinished = true
+	}
+
+	bufferSize := b.buff.Len()
+	totalBytesToRead := len(data)
+	bytesRead := 0
+
+	// Case 1: Read starts and ends within buffer
+	if off < int64(bufferSize) {
+		// Calculate how much we can read from buffer
+		bufferBytesToRead := bufferSize - int(off)
+		if bufferBytesToRead > totalBytesToRead {
+			bufferBytesToRead = totalBytesToRead
+		}
+
+		// Read from buffer
+		bufferReader := bytes.NewReader(b.buff.Bytes())
+		n, err := bufferReader.ReadAt(data[:bufferBytesToRead], off)
+		if err != nil && err != io.EOF {
+			return n, err
+		}
+		bytesRead += n
+		data = data[n:]
+		off += int64(n)
+	}
+
+	// Case 2: Read from file if there's more data needed and we use a file
+	if len(data) > 0 && b.useFile {
+		// Open file if not already open
 		if b.readFile == nil {
 			file, err := os.Open(b.filename)
 			if err != nil {
-				return 0, errors.Wrapf(err, "can't open a temp file '%s'", b.filename)
+				return bytesRead, errors.Wrapf(err, "can't open a temp file '%s'", b.filename)
 			}
 
 			var readFile io.ReadCloser = file
 			if b.encrypt {
 				reader, err := sio.DecryptReaderAt(file, sio.Config{Key: b.encryptionKey[:]})
 				if err != nil {
-					return 0, errors.Wrap(err, "can't create a decryption stream")
+					return bytesRead, errors.Wrap(err, "can't create a decryption stream")
 				}
 				readFile = newSioDecryptReaderAtWrapper(reader, file)
 			}
-
 			b.readFile = readFile
 		}
 
+		// Read from file
 		if readerAt, ok := b.readFile.(io.ReaderAt); ok {
-			return readerAt.ReadAt(data, off-int64(b.buff.Len()))
+			fileOffset := off - int64(bufferSize)
+			n, err := readerAt.ReadAt(data, fileOffset)
+			bytesRead += n
+			if err != nil && err != io.EOF {
+				return bytesRead, err
+			}
 		} else {
-			return 0, fmt.Errorf("Error casting readFile to ReaderAt")
+			return bytesRead, fmt.Errorf("readFile does not implement io.ReaderAt")
 		}
 	}
 
-	// offset is complete in buffer
-	if len(data) <= b.buff.Len() {
-		return bytes.NewReader(b.buff.Bytes()).ReadAt(data, off)
+	// Return EOF if we've read less than requested (end of buffer/file)
+	if bytesRead < totalBytesToRead {
+		return bytesRead, io.EOF
 	}
 
-	// offset is half in buffer half in file
-	// we have to create a mulireaderAt
-	// first read the half from buffer
-	bufN, err := b.ReadAt(data[:b.buff.Len()], off)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return bufN, err
-	}
-
-	// then read the rest from file
-	bufF, err := b.ReadAt(data[bufN:], off+int64(bufN))
-	return bufN + bufF, err
+	return bytesRead, nil
 }
 
 func (b *Buffer) readFromBuffer(data []byte) (n int, err error) {
@@ -501,12 +541,14 @@ func (rw *sioDecryptReaderWrapper) Close() error {
 	return rw.originalFile.Close()
 }
 
-// sioDecryptReaderWrapper is a wrapper for sio.DecryptReader() function
-// that satisfy io.ReadCloser.
+// sioDecryptReaderAtWrapper is a wrapper for sio.DecryptReaderAt() function
+// that satisfies io.ReadCloser and io.ReaderAt.
 // It reads from passed io.ReaderAt and closes the original file
 type sioDecryptReaderAtWrapper struct {
 	r            io.ReaderAt
 	originalFile *os.File
+	offset       int64 // Current read position for sequential Read() calls
+	mu           sync.Mutex // Mutex to protect offset for thread safety
 }
 
 func newSioDecryptReaderAtWrapper(r io.ReaderAt, file *os.File) *sioDecryptReaderAtWrapper {
@@ -517,7 +559,13 @@ func newSioDecryptReaderAtWrapper(r io.ReaderAt, file *os.File) *sioDecryptReade
 }
 
 func (rw *sioDecryptReaderAtWrapper) Read(p []byte) (int, error) {
-	return 0, nil
+	// Implement sequential reading using ReadAt with internal offset
+	rw.mu.Lock()
+	defer rw.mu.Unlock()
+	
+	n, err := rw.r.ReadAt(p, rw.offset)
+	rw.offset += int64(n)
+	return n, err
 }
 
 func (rw *sioDecryptReaderAtWrapper) ReadAt(b []byte, off int64) (n int, err error) {
