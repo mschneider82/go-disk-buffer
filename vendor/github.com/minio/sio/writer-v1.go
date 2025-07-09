@@ -20,8 +20,9 @@ type decWriterV10 struct {
 	authDecV10
 	dst io.Writer
 
-	buffer packageV10
-	offset int
+	buffer   packageV10
+	offset   int
+	closeErr error
 }
 
 // decryptWriterV10 returns an io.WriteCloser wrapping the given io.Writer.
@@ -34,10 +35,14 @@ func decryptWriterV10(dst io.Writer, config *Config) (*decWriterV10, error) {
 	if err != nil {
 		return nil, err
 	}
+	buf := packageBufferPool.Get().([]byte)[:maxPackageSize]
+	for i := range buf {
+		buf[i] = 0
+	}
 	return &decWriterV10{
 		authDecV10: ad,
 		dst:        dst,
-		buffer:     make(packageV10, maxPackageSize),
+		buffer:     buf,
 	}, nil
 }
 
@@ -93,7 +98,15 @@ func (w *decWriterV10) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
-func (w *decWriterV10) Close() error {
+func (w *decWriterV10) Close() (err error) {
+	if w.buffer == nil {
+		return w.closeErr
+	}
+	defer func() {
+		w.closeErr = err
+		recyclePackageBufferPool(w.buffer)
+		w.buffer = nil
+	}()
 	if w.offset > 0 {
 		if w.offset <= headerSize+tagSize {
 			return errInvalidPayloadSize // the payload is always > 0
@@ -102,13 +115,14 @@ func (w *decWriterV10) Close() error {
 		if w.offset < headerSize+header.Len()+tagSize {
 			return errInvalidPayloadSize // there is less data than specified by the header
 		}
-		if err := w.Open(w.buffer.Payload(), w.buffer[:w.buffer.Length()]); err != nil {
+		if err = w.Open(w.buffer.Payload(), w.buffer[:w.buffer.Length()]); err != nil {
 			return err
 		}
-		if err := flush(w.dst, w.buffer.Payload()); err != nil { // write to underlying io.Writer
+		if err = flush(w.dst, w.buffer.Payload()); err != nil { // write to underlying io.Writer
 			return err
 		}
 	}
+
 	if dst, ok := w.dst.(io.Closer); ok {
 		return dst.Close()
 	}
@@ -122,6 +136,7 @@ type encWriterV10 struct {
 	buffer      packageV10
 	offset      int
 	payloadSize int
+	closeErr    error
 }
 
 // encryptWriterV10 returns an io.WriteCloser wrapping the given io.Writer.
@@ -138,7 +153,7 @@ func encryptWriterV10(dst io.Writer, config *Config) (*encWriterV10, error) {
 	return &encWriterV10{
 		authEncV10:  ae,
 		dst:         dst,
-		buffer:      make(packageV10, maxPackageSize),
+		buffer:      packageBufferPool.Get().([]byte)[:maxPackageSize],
 		payloadSize: config.PayloadSize,
 	}, nil
 }
@@ -174,7 +189,16 @@ func (w *encWriterV10) Write(p []byte) (n int, err error) {
 	return
 }
 
-func (w *encWriterV10) Close() error {
+func (w *encWriterV10) Close() (err error) {
+	if w.buffer == nil {
+		return w.closeErr
+	}
+	defer func() {
+		w.closeErr = err
+		recyclePackageBufferPool(w.buffer)
+		w.buffer = nil
+	}()
+
 	if w.offset > 0 {
 		w.Seal(w.buffer[:], w.buffer[headerSize:headerSize+w.offset])
 		if err := flush(w.dst, w.buffer[:w.buffer.Length()]); err != nil { // write to underlying io.Writer
@@ -192,7 +216,7 @@ func flush(w io.Writer, p []byte) error {
 	if err != nil {
 		return err
 	}
-	if n != len(p) { // not neccasary if the w follows the io.Writer doc *precisely*
+	if n != len(p) { // not necessary if the w follows the io.Writer doc *precisely*
 		return io.ErrShortWrite
 	}
 	return nil

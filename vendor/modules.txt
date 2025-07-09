@@ -1,20 +1,32 @@
 # github.com/davecgh/go-spew v1.1.1
+## explicit
 github.com/davecgh/go-spew/spew
-# github.com/minio/sio v0.2.0
+# github.com/kr/pretty v0.1.0
+## explicit
+# github.com/minio/sio v0.4.1
+## explicit; go 1.18
 github.com/minio/sio
-# github.com/pkg/errors v0.8.1
+# github.com/pkg/errors v0.9.1
+## explicit
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
+## explicit
 github.com/pmezard/go-difflib/difflib
 # github.com/stretchr/testify v1.4.0
-github.com/stretchr/testify/require
+## explicit
 github.com/stretchr/testify/assert
-# golang.org/x/crypto v0.0.0-20181106171534-e4dc69e5b2fd
+github.com/stretchr/testify/require
+# golang.org/x/crypto v0.39.0
+## explicit; go 1.23.0
+golang.org/x/crypto/chacha20
 golang.org/x/crypto/chacha20poly1305
-golang.org/x/crypto/internal/chacha20
-golang.org/x/crypto/internal/subtle
-golang.org/x/crypto/poly1305
-# golang.org/x/sys v0.0.0-20181107165924-66b7b1311ac8
+golang.org/x/crypto/internal/alias
+golang.org/x/crypto/internal/poly1305
+# golang.org/x/sys v0.33.0
+## explicit; go 1.23.0
 golang.org/x/sys/cpu
+# gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127
+## explicit
 # gopkg.in/yaml.v2 v2.2.2
+## explicit
 gopkg.in/yaml.v2
