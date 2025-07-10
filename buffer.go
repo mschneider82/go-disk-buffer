@@ -427,9 +427,40 @@ func (b *Buffer) ReadByte() (byte, error) {
 	return c[0], err
 }
 
-// TODO: help wanted.
-// What should we do with invalid runes (like 0xff)?
-func (b *Buffer) readRune() (r rune, size int, err error) {
+// ReadBytes reads until the first occurrence of delim in the input,
+// returning a slice containing the data up to and including the delimiter.
+// If ReadBytes encounters an error before finding a delimiter,
+// it returns the data read before the error and the error itself (often io.EOF).
+func (b *Buffer) ReadBytes(delim byte) ([]byte, error) {
+	var result []byte
+
+	for {
+		c, err := b.ReadByte()
+		if err != nil {
+			return result, err
+		}
+
+		result = append(result, c)
+
+		if c == delim {
+			return result, nil
+		}
+	}
+}
+
+// ReadString reads until the first occurrence of delim in the input,
+// returning a string containing the data up to and including the delimiter.
+// If ReadString encounters an error before finding a delimiter,
+// it returns the data read before the error and the error itself (often io.EOF).
+func (b *Buffer) ReadString(delim byte) (string, error) {
+	bytes, err := b.ReadBytes(delim)
+	return string(bytes), err
+}
+
+// ReadRune reads a single UTF-8 encoded Unicode character and returns the
+// rune and its size in bytes. If the encoded rune is invalid, it consumes
+// one byte and returns unicode.ReplacementChar (U+FFFD) with a size of 1.
+func (b *Buffer) ReadRune() (r rune, size int, err error) {
 	var p []byte
 
 	for {
@@ -547,7 +578,7 @@ func (rw *sioDecryptReaderWrapper) Close() error {
 type sioDecryptReaderAtWrapper struct {
 	r            io.ReaderAt
 	originalFile *os.File
-	offset       int64 // Current read position for sequential Read() calls
+	offset       int64      // Current read position for sequential Read() calls
 	mu           sync.Mutex // Mutex to protect offset for thread safety
 }
 
@@ -562,7 +593,7 @@ func (rw *sioDecryptReaderAtWrapper) Read(p []byte) (int, error) {
 	// Implement sequential reading using ReadAt with internal offset
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
-	
+
 	n, err := rw.r.ReadAt(p, rw.offset)
 	rw.offset += int64(n)
 	return n, err

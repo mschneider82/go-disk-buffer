@@ -101,6 +101,9 @@ Buffer_size_is_less_than_data/utils.Buffer-8          10     110406320 ns/op    
 - `Read(p []byte) (n int, err error)`
 - `ReadAt(b []byte, off int64) (n int, err error)`
 - `ReadByte() (byte, error)`
+- `ReadBytes(delim byte) (line []byte, err error)`
+- `ReadString(delim byte) (line string, err error)`
+- `ReadRune() (r rune, size int, err error)`
 - `Next(n int) []byte`
 - `WriteTo(w io.Writer) (n int64, err error)`
 
@@ -120,13 +123,7 @@ Buffer_size_is_less_than_data/utils.Buffer-8          10     110406320 ns/op    
 
 ## Unavailable methods
 
-### Can be added
-
-- `ReadBytes(delim byte) (line []byte, err error)`
-- `ReadString(delim byte) (line string, err error)`
-- `ReadRune() (r rune, size int, err error)` – **help wanted** (check `Buffer.readRune()` method)
-
-### Won't be adeed
+### Won't be added
 
 - `Bytes() []byte`
 

@@ -234,10 +234,7 @@ func TestBuffer_ReadByte(t *testing.T) {
 	}
 }
 
-// TODO
 func TestBuffer_ReadRune(t *testing.T) {
-	t.Skip("skip the test because \"Buffer.ReadRune()\" method is not finished")
-
 	require := require.New(t)
 
 	data := []byte("Hello | ✓ | 123456 | Привет!")
@@ -248,11 +245,154 @@ func TestBuffer_ReadRune(t *testing.T) {
 	b.Write([]byte(data))
 
 	for _, rn := range string(data) {
-		r, size, err := b.readRune()
+		r, size, err := b.ReadRune()
 		require.Nil(err)
 		require.Equal(utf8.RuneLen(rn), size)
 		require.Equal(rn, r)
+	}
+}
 
+func TestBuffer_ReadBytes(t *testing.T) {
+	tests := []struct {
+		name         string
+		maxMemSize   int
+		data         string
+		delimiter    byte
+		expected     []string
+		expectErrors []bool
+	}{
+		{
+			name:         "Simple newline delimiter - all in memory",
+			maxMemSize:   100,
+			data:         "line1\nline2\nline3",
+			delimiter:    '\n',
+			expected:     []string{"line1\n", "line2\n", "line3"},
+			expectErrors: []bool{false, false, true}, // EOF on last read
+		},
+		{
+			name:         "Simple newline delimiter - across memory/disk boundary",
+			maxMemSize:   8,
+			data:         "line1\nline2\nline3",
+			delimiter:    '\n',
+			expected:     []string{"line1\n", "line2\n", "line3"},
+			expectErrors: []bool{false, false, true}, // EOF on last read
+		},
+		{
+			name:         "Semicolon delimiter",
+			maxMemSize:   5,
+			data:         "field1;field2;field3",
+			delimiter:    ';',
+			expected:     []string{"field1;", "field2;", "field3"},
+			expectErrors: []bool{false, false, true}, // EOF on last read
+		},
+		{
+			name:         "No delimiter found",
+			maxMemSize:   100,
+			data:         "no delimiter here",
+			delimiter:    '\n',
+			expected:     []string{"no delimiter here"},
+			expectErrors: []bool{true}, // EOF
+		},
+		{
+			name:         "Empty buffer",
+			maxMemSize:   100,
+			data:         "",
+			delimiter:    '\n',
+			expected:     []string{""},
+			expectErrors: []bool{true}, // EOF
+		},
+		{
+			name:         "Only delimiter",
+			maxMemSize:   100,
+			data:         "\n",
+			delimiter:    '\n',
+			expected:     []string{"\n", ""},
+			expectErrors: []bool{false, true}, // EOF on second read
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+
+			b := NewBufferWithMaxMemorySize(tt.maxMemSize)
+			defer b.Reset()
+
+			_, err := b.Write([]byte(tt.data))
+			require.Nil(err)
+
+			for i, expected := range tt.expected {
+				result, err := b.ReadBytes(tt.delimiter)
+
+				if tt.expectErrors[i] {
+					require.Equal(io.EOF, err)
+				} else {
+					require.Nil(err)
+				}
+
+				require.Equal(expected, string(result))
+			}
+		})
+	}
+}
+
+func TestBuffer_ReadString(t *testing.T) {
+	tests := []struct {
+		name         string
+		maxMemSize   int
+		data         string
+		delimiter    byte
+		expected     []string
+		expectErrors []bool
+	}{
+		{
+			name:         "Simple newline delimiter - all in memory",
+			maxMemSize:   100,
+			data:         "line1\nline2\nline3",
+			delimiter:    '\n',
+			expected:     []string{"line1\n", "line2\n", "line3"},
+			expectErrors: []bool{false, false, true}, // EOF on last read
+		},
+		{
+			name:         "Simple newline delimiter - across memory/disk boundary",
+			maxMemSize:   8,
+			data:         "line1\nline2\nline3",
+			delimiter:    '\n',
+			expected:     []string{"line1\n", "line2\n", "line3"},
+			expectErrors: []bool{false, false, true}, // EOF on last read
+		},
+		{
+			name:         "Unicode content with comma delimiter",
+			maxMemSize:   10,
+			data:         "Привет,мир,тест",
+			delimiter:    ',',
+			expected:     []string{"Привет,", "мир,", "тест"},
+			expectErrors: []bool{false, false, true}, // EOF on last read
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+
+			b := NewBufferWithMaxMemorySize(tt.maxMemSize)
+			defer b.Reset()
+
+			_, err := b.Write([]byte(tt.data))
+			require.Nil(err)
+
+			for i, expected := range tt.expected {
+				result, err := b.ReadString(tt.delimiter)
+
+				if tt.expectErrors[i] {
+					require.Equal(io.EOF, err)
+				} else {
+					require.Nil(err)
+				}
+
+				require.Equal(expected, result)
+			}
+		})
 	}
 }
 
