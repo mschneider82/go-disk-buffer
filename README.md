@@ -1,5 +1,11 @@
 # Go Disk Buffer
 
+## DEPREACTED use https://schneider.vip/hybridbuffer
+## DEPREACTED use https://schneider.vip/hybridbuffer
+## DEPREACTED use https://schneider.vip/hybridbuffer
+## DEPREACTED use https://schneider.vip/hybridbuffer
+
+
 Package `buffer` helps to work with huge amount of data, which cannot be stored in RAM. Instead of keeping all data in RAM `buffer.Buffer` can store the data on a disk in a temporary file.
 
 **Features:**
